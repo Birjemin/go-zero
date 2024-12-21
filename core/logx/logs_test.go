@@ -679,6 +679,10 @@ func TestSetup(t *testing.T) {
 
 func TestDisable(t *testing.T) {
 	Disable()
+	defer func() {
+		SetLevel(InfoLevel)
+		atomic.StoreUint32(&encoding, jsonEncodingType)
+	}()
 
 	var opt logOptions
 	WithKeepDays(1)(&opt)
@@ -699,6 +703,17 @@ func TestDisableStat(t *testing.T) {
 	defer writer.Store(old)
 	Stat(message)
 	assert.Equal(t, 0, w.builder.Len())
+}
+
+func TestAddWriter(t *testing.T) {
+	const message = "hello there"
+	w := new(mockWriter)
+	AddWriter(w)
+	w1 := new(mockWriter)
+	AddWriter(w1)
+	Error(message)
+	assert.Contains(t, w.String(), message)
+	assert.Contains(t, w1.String(), message)
 }
 
 func TestSetWriter(t *testing.T) {
@@ -835,12 +850,13 @@ func doTestStructedLogConsole(t *testing.T, w *mockWriter, write func(...any)) {
 func testSetLevelTwiceWithMode(t *testing.T, mode string, w *mockWriter) {
 	writer.Store(nil)
 	SetUp(LogConf{
-		Mode:       mode,
-		Level:      "debug",
-		Path:       "/dev/null",
-		Encoding:   plainEncoding,
-		Stat:       false,
-		TimeFormat: time.RFC3339,
+		Mode:           mode,
+		Level:          "debug",
+		Path:           "/dev/null",
+		Encoding:       plainEncoding,
+		Stat:           false,
+		TimeFormat:     time.RFC3339,
+		FileTimeFormat: time.DateTime,
 	})
 	SetUp(LogConf{
 		Mode:  mode,
