@@ -13,13 +13,13 @@ import (
 )
 
 const (
-	idAPI              = "api"
-	groupKeyText       = "group"
-	infoTitleKey       = "Title"
-	infoDescKey        = "Desc"
-	infoVersionKey     = "Version"
-	infoAuthorKey      = "Author"
-	infoEmailKey       = "Email"
+	idAPI          = "api"
+	groupKeyText   = "group"
+	infoTitleKey   = "Title"
+	infoDescKey    = "Desc"
+	infoVersionKey = "Version"
+	infoAuthorKey  = "Author"
+	infoEmailKey   = "Email"
 )
 
 // Parser is the parser for api file.
@@ -466,6 +466,20 @@ func (p *Parser) parsePathItem() []token.Token {
 				return nil
 			}
 			list = append(list, p.curTok)
+		} else if p.peekTokenIs(token.DOT) {
+			// Allow dot (.) in path segments for file extensions like .php, .html, etc.
+			if !p.nextToken() {
+				return nil
+			}
+
+			list = append(list, p.curTok)
+
+			// After a dot, we expect an identifier (e.g., .php, .html)
+			if !p.advanceIfPeekTokenIs(token.IDENT) {
+				return nil
+			}
+
+			list = append(list, p.curTok)
 		} else {
 			if p.peekTokenIs(token.LPAREN, token.Returns, token.AT_DOC, token.AT_HANDLER, token.SEMICOLON, token.RBRACE) {
 				return list
@@ -545,7 +559,7 @@ func (p *Parser) parseAtDocGroupStmt() ast.AtDocStmt {
 		}
 
 		stmt.Values = append(stmt.Values, expr)
-		if p.notExpectPeekToken(token.RPAREN, token.KEY) {
+		if p.notExpectPeekToken(token.RPAREN, token.IDENT) {
 			return nil
 		}
 	}
@@ -605,7 +619,7 @@ func (p *Parser) parseAtServerStmt() *ast.AtServerStmt {
 		}
 
 		stmt.Values = append(stmt.Values, expr)
-		if p.notExpectPeekToken(token.RPAREN, token.KEY) {
+		if p.notExpectPeekToken(token.RPAREN, token.IDENT) {
 			return nil
 		}
 	}
@@ -1115,7 +1129,7 @@ func (p *Parser) parseInfoStmt() *ast.InfoStmt {
 		}
 
 		stmt.Values = append(stmt.Values, expr)
-		if p.notExpectPeekToken(token.RPAREN, token.KEY) {
+		if p.notExpectPeekToken(token.RPAREN, token.IDENT) {
 			return nil
 		}
 	}
@@ -1134,11 +1148,16 @@ func (p *Parser) parseAtServerKVExpression() *ast.KVExpr {
 	var expr = &ast.KVExpr{}
 
 	// token IDENT
-	if !p.advanceIfPeekTokenIs(token.KEY, token.RPAREN) {
+	if !p.advanceIfPeekTokenIs(token.IDENT, token.RPAREN) {
 		return nil
 	}
 
 	expr.Key = p.curTokenNode()
+
+	if !p.advanceIfPeekTokenIs(token.COLON) {
+		return nil
+	}
+	expr.Colon = p.curTokenNode()
 
 	var valueTok token.Token
 	var leadingCommentGroup ast.CommentGroup
@@ -1324,14 +1343,20 @@ func (p *Parser) parseKVExpression() *ast.KVExpr {
 	var expr = &ast.KVExpr{}
 
 	// token IDENT
-	if !p.advanceIfPeekTokenIs(token.KEY) {
+	if !p.advanceIfPeekTokenIs(token.IDENT) {
 		return nil
 	}
 
 	expr.Key = p.curTokenNode()
 
+	// token COLON
+	if !p.advanceIfPeekTokenIs(token.COLON) {
+		return nil
+	}
+	expr.Colon = p.curTokenNode()
+
 	// token STRING
-	if !p.advanceIfPeekTokenIs(token.STRING) {
+	if !p.advanceIfPeekTokenIs(token.STRING, token.RAW_STRING, token.IDENT) {
 		return nil
 	}
 
