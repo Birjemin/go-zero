@@ -263,14 +263,24 @@ func (c *cluster) handleWatchEvents(ctx context.Context, key watchKey, events []
 	for _, ev := range events {
 		switch ev.Type {
 		case clientv3.EventTypePut:
+			evKey := string(ev.Kv.Key)
+			evVal := string(ev.Kv.Value)
 			c.lock.Lock()
-			watcher.values[string(ev.Kv.Key)] = string(ev.Kv.Value)
+			oldVal, exists := watcher.values[evKey]
+			watcher.values[evKey] = evVal
 			c.lock.Unlock()
+			if exists && oldVal == evVal {
+				// duplicate PUT with same value, skip to prevent unbounded growth
+				continue
+			}
+			if exists {
+				// key moved to a new value, notify delete of old entry first
+				for _, l := range listeners {
+					l.OnDelete(KV{Key: evKey, Val: oldVal})
+				}
+			}
 			for _, l := range listeners {
-				l.OnAdd(KV{
-					Key: string(ev.Kv.Key),
-					Val: string(ev.Kv.Value),
-				})
+				l.OnAdd(KV{Key: evKey, Val: evVal})
 			}
 		case clientv3.EventTypeDelete:
 			c.lock.Lock()
@@ -386,8 +396,9 @@ func (c *cluster) watch(cli EtcdClient, key watchKey, rev int64) {
 			rev = c.load(cli, key)
 		}
 
-		// log the error and retry
+		// log the error and retry with cooldown to prevent CPU/disk exhaustion
 		logc.Error(cli.Ctx(), err)
+		time.Sleep(coolDownUnstable.AroundDuration(coolDownInterval))
 	}
 }
 
@@ -432,16 +443,16 @@ func (c *cluster) setupWatch(cli EtcdClient, key watchKey, rev int64) (context.C
 	}
 
 	ctx, cancel := context.WithCancel(cli.Ctx())
+
+	c.lock.Lock()
 	if watcher, ok := c.watchers[key]; ok {
 		watcher.cancel = cancel
 	} else {
 		val := newWatchValue()
 		val.cancel = cancel
-
-		c.lock.Lock()
 		c.watchers[key] = val
-		c.lock.Unlock()
 	}
+	c.lock.Unlock()
 
 	rch = cli.Watch(clientv3.WithRequireLeader(ctx), wkey, ops...)
 
@@ -507,7 +518,7 @@ func makeKeyPrefix(key string) string {
 	return fmt.Sprintf("%s%c", key, Delimiter)
 }
 
-// NewClient returns a watchValue that make sure values are not nil.
+// newWatchValue returns a watchValue that make sure values are not nil.
 func newWatchValue() *watchValue {
 	return &watchValue{
 		values: make(map[string]string),

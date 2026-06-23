@@ -104,6 +104,8 @@ func ZRPC(_ *cobra.Command, args []string) error {
 	ctx.ProtocCmd = strings.Join(protocArgs, " ")
 	ctx.IsGenClient = VarBoolClient
 	ctx.Module = VarStringModule
+	ctx.NameFromFilename = VarBoolNameFromFilename
+	ctx.ProtoPaths = VarStringSliceProtoPath
 	g := generator.NewGenerator(style, verbose)
 	return g.Generate(&ctx)
 }
